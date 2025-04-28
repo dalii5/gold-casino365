@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>منصة وكيل المراهنات</title>
+  <style>
+    :root {
+      --primary: #0066cc;
+      --secondary: #005bb5;
+      --background: #f0f4f8;
+      --text-dark: #2d2d2d;
+      --text-light: #ffffff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+    body { background: var(--background); color: var(--text-dark); }
+    .container { max-width: 480px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    header { background: var(--primary); padding: 16px; text-align: center; }
+    header h1 { color: var(--text-light); font-size: 1.5rem; }
+    section { padding: 20px; }
+    .hidden { display: none; }
+    form { display: flex; flex-direction: column; gap: 12px; }
+    input { padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 12px; border: none; border-radius: 4px; background: var(--primary); color: var(--text-light); font-weight: bold; cursor: pointer; }
+    button:hover { background: var(--secondary); }
+    .error { color: #c0392b; text-align: center; margin-bottom: 10px; }
+    .balance { font-size: 1.2rem; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px; text-align: center; border: 1px solid #ddd; }
+    th { background: var(--primary); color: var(--text-light); }
+    .flex { display: flex; gap: 10px; }
+    .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+    .modal-content { background: #fff; padding: 20px; border-radius: 6px; width: 90%; max-width: 320px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header><h1>منصة وكيل المراهنات</h1></header>
+
+    <section id="authSection">
+      <div id="errorAuth" class="error"></div>
+      <form id="authForm">
+        <input type="email" id="email" placeholder="البريد الإلكتروني" required />
+        <input type="password" id="password" placeholder="كلمة المرور" required />
+        <div class="flex">
+          <button type="button" id="btnShowLogin">تسجيل دخول</button>
+          <button type="button" id="btnShowRegister">تسجيل جديد</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="dashboardSection" class="hidden">
+      <div class="balance">الرصيد الحالي: <span id="balanceValue">0.00</span> د.ت</div>
+      <div class="flex">
+        <button id="btnDeposit">إيداع</button>
+        <button id="btnWithdraw">سحب</button>
+        <button id="btnLogout">خروج</button>
+      </div>
+      <h3 style="margin-top:20px;">المعاملات الأخيرة</h3>
+      <table>
+        <thead>
+          <tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th></tr>
+        </thead>
+        <tbody id="txTableBody"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-content">
+      <h4 id="modalTitle">عنوان</h4>
+      <div id="errorModal" class="error"></div>
+      <input type="number" id="modalAmount" placeholder="المبلغ (د.ت)" />
+      <div class="flex" style="margin-top:10px;">
+        <button id="modalConfirm">تأكيد</button>
+        <button id="modalCancel">إلغاء</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = 'https://clicbet216.com/api';
+    const authSection = document.getElementById('authSection');
+    const dashboardSection = document.getElementById('dashboardSection');
+    const errorAuth = document.getElementById('errorAuth');
+    const authForm = document.getElementById('authForm');
+    const btnShowLogin = document.getElementById('btnShowLogin');
+    const btnShowRegister = document.getElementById('btnShowRegister');
+    const btnLogout = document.getElementById('btnLogout');
+    const balanceValue = document.getElementById('balanceValue');
+    const txTableBody = document.getElementById('txTableBody');
+    const btnDeposit = document.getElementById('btnDeposit');
+    const btnWithdraw = document.getElementById('btnWithdraw');
+    const modal = document.getElementById('modal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalAmount = document.getElementById('modalAmount');
+    const errorModal = document.getElementById('errorModal');
+    const modalConfirm = document.getElementById('modalConfirm');
+    const modalCancel = document.getElementById('modalCancel');
+
+    let actionType = null;
+    let token = localStorage.getItem('agent_token');
+
+    function openModal(type) {
+      actionType = type;
+      modalTitle.textContent = type === 'deposit' ? 'إيداع رصيد' : 'سحب رصيد';
+      modalAmount.value = '';
+      errorModal.textContent = '';
+      modal.classList.remove('hidden');
+    }
+
+    function closeModal() { modal.classList.add('hidden'); }
+
+    btnLogout.addEventListener('click', () => {
+      localStorage.removeItem('agent_token'); token = null;
+      dashboardSection.classList.add('hidden'); authSection.classList.remove('hidden');
+    });
+
+    btnDeposit.addEventListener('click', () => openModal('deposit'));
+    btnWithdraw.addEventListener('click', () => openModal('withdraw'));
+    modalCancel.addEventListener('click', closeModal);
+
+    modalConfirm.addEventListener('click', async () => {
+      const amount = parseFloat(modalAmount.value);
+      if (!amount || amount <= 0) return errorModal.textContent = 'مبلغ غير صالح';
+      try {
+        const endpoint = actionType === 'deposit' ? '/transactions/deposit' : '/transactions/withdraw';
+        const res = await fetch(API + endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ amount })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        closeModal(); loadDashboard();
+      } catch (err) {
+        errorModal.textContent = err.message;
+      }
+    });
+
+    btnShowLogin.addEventListener('click', () => handleAuth('login'));
+    btnShowRegister.addEventListener('click', () => handleAuth('register'));
+
+    async function handleAuth(mode) {
+      errorAuth.textContent = '';
+      const email = authForm.email.value;
+      const password = authForm.password.value;
+      if (!email || !password) return errorAuth.textContent = 'املأ جميع الحقول';
+      try {
+        const res = await fetch(API + `/auth/${mode}`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json(); if (!res.ok) throw new Error(data.error);
+        if (mode === 'login') {
+          token = data.token; localStorage.setItem('agent_token', token);
+          showDashboard(); loadDashboard();
+        } else {
+          handleAuth('login');
+        }
+      } catch (err) {
+        errorAuth.textContent = err.message;
+      }
+    }
+
+    function showDashboard() {
+      authSection.classList.add('hidden');
+      dashboardSection.classList.remove('hidden');
+    }
+
+    async function loadDashboard() {
+      try {
+        const [agRes, txRes] = await Promise.all([
+          fetch(API + '/agents/me', { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(API + '/transactions', { headers: { 'Authorization': `Bearer ${token}` } })
+        ]);
+        const agent = await agRes.json();
+        const txs = await txRes.json();
+        if (!agRes.ok) throw new Error(agent.error); if (!txRes.ok) throw new Error(txs.error);
+        balanceValue.textContent = parseFloat(agent.balance).toFixed(2);
+        txTableBody.innerHTML = '';
+        txs.forEach(tx => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${new Date(tx.date).toLocaleString()}</td><td>${tx.type}</td><td>${parseFloat(tx.amount).toFixed(2)}</td>`;
+          txTableBody.appendChild(tr);
+        });
+      } catch (err) {
+        alert('خطأ في جلب البيانات: ' + err.message);
+      }
+    }
+
+    if (token) { showDashboard(); loadDashboard(); }
+  </script>
+</body>
+</html>
